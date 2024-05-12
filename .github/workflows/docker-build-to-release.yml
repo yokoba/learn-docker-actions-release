@@ -1,0 +1,66 @@
+name: Build and Deploy of Docker container to release
+
+on:
+  push:
+    tags:
+      - '*'
+
+permissions:
+  contents: write
+
+jobs:
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up to Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Prepare filename from tag name
+        run: echo "TAG=${GITHUB_REF/refs\/tags\//}" >> $GITHUB_ENV
+      
+      - name: Prepare filename from current datetime
+        run: echo "CURRENT_DATE=$(date +'%y%m%d_%H%M%S')" >> $GITHUB_ENV
+
+      - name: Build the Docker image
+        uses: docker/build-push-action@v5
+        with:
+          load: true
+          tags: hallo-world:${{ env.TAG }}
+          context: .
+          # file: Dockerfile <- Specify either context or file
+          # build-args: |
+          #   ARG1=value1
+          #   ARG2=value2
+
+      - name: Save Docker image
+        run: docker save hallo-world:${{ env.TAG }} | gzip > ${{ env.CURRENT_DATE }}.tar.gz
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-image
+          path: ${{ env.CURRENT_DATE }}.tar.gz
+
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ env.TAG }}
+          release_name: ${{ env.TAG }}  # Relese title
+          draft: false
+          prerelease: false
+
+      - name: Upload Release Asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./${{ env.CURRENT_DATE }}.tar.gz 
+          asset_name: test-${{ env.CURRENT_DATE }}.tar.gz  # filename
+          asset_content_type: application/gzip
